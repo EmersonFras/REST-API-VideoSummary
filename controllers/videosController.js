@@ -78,5 +78,19 @@ const updateVideo = asyncHandler(async (req, res) => {
 })
 
 const deleteVideo = asyncHandler(async (req, res) => {
+    const { id } = req.body;
 
+    if (!id) {
+        res.status(400).json({ message: 'ID required'})
+    }
+
+    const video = Video.findById(id).exec()
+
+    if (!video) {
+        res.status(400).json({ message: 'Invalid video ID'})
+    }
+
+    const deletedVideo = await Video.findByIdAndDelete(id).lean().exec()
+
+    res.json({ message: `${deletedVideo.title} deleted`})
 })
