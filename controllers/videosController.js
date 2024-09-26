@@ -4,18 +4,23 @@ const asyncHandler = require('express-async-handler')
 
 
 const getAllVideos = asyncHandler(async (req, res) => {
-    const { userID } = req.query
+    const { userId } = req.query
+
     if (!userId) {
         return res.status(400).json({ message: 'User ID required'})
     }
 
-    const user = await User.findById(userID).lean().exec()
-
+    const user = await User.findById(userId).lean().exec()
+    
     if (!user) {
         return res.status(400).json({ message: "Invalid ID"})
     }
 
-    const videos = await Video.find( { uploadedBy: userId }).lean().exec()
+    const videos = await Video.find( { user: userId }).lean().exec()
+
+    if (!videos?.length) {
+        return res.status(404).json({ message: 'No videos found'})
+    }
 
     res.json(videos)
 })
@@ -24,44 +29,50 @@ const createNewVideo = asyncHandler(async (req, res) => {
     const { title, description, videoUrl, user } = req.body;
     
     if (!title || !description || !videoUrl || !user) {
-        res.status(400).json({ message: 'All fields required'})
+        return res.status(400).json({ message: 'All fields required'})
     }
 
-    const userFound = User.findById(user).lean().exec()
+    const userFound = await User.findById(user).lean().exec()
+
     if (!userFound) {
-        res.status(400).json({ message : 'Invalid User ID'})
+        return res.status(400).json({ message : 'Invalid User ID'})
     }
 
+    
+    const duplicate = await Video.findOne({ user: user, title: title }).lean().exec()
+    if (duplicate) {
+        return res.status(409).json({ message: 'Duplicate video title'})
+    }
+    
     const videoObject = {title, description, videoUrl, user}
-
     const video = Video.create(videoObject)
     if (video) {
-        res.status(201).json({ message: `New video ${title} created`})
+        return res.status(201).json({ message: `New video ${title} created`})
     } else {
-        res.status(400).json({ message: 'Invalid video data received' })
+        return res.status(400).json({ message: 'Invalid video data received' })
     }
 
 })
 
 const updateVideo = asyncHandler(async (req, res) => {
-    const { id, title, description, videoUrl, user } = req.body;
+    const { _id: id, title, description, videoUrl, user } = req.body;
 
-    if (!title || !description || !videoUrl || !user) {
-        res.status(400).json({ message: 'All fields required'})
+    if (!id || !title || !description || !videoUrl || !user) {
+        return res.status(400).json({ message: 'All fields required'})
     }
 
-    const userFound = User.findById(user).exec()
+    const userFound = await User.findById(user).exec()
     if (!userFound) {
-        res.status(400).json({ message: 'Invalid User ID'})
+        return res.status(400).json({ message: 'Invalid User ID'})
     }
 
-    const video = Video.findById(id).exec()
+    const video = await Video.findById(id).exec()
     if (!video) {
-        res.status(400).json({ message: "Invalid video ID"})
+        return res.status(400).json({ message: "Invalid video ID"})
     }
 
     // Check for duplicate
-    const duplicate = await Video.findOne({ uploadedBy : user, title: title }).lean().exec()
+    const duplicate = await Video.findOne({ user : user, title: title }).lean().exec()
     // Allow updates to the original user
     if (duplicate && duplicate?._id.toString() !== id) {
         return res.status(409).json({ message: 'Duplicate video title'})
@@ -69,7 +80,7 @@ const updateVideo = asyncHandler(async (req, res) => {
 
     video.title = title
     video.description = description
-    video.videoUrl = video.videoUrl
+    video.videoUrl = videoUrl
     video.user = user
 
     const updatedVideo = await video.save()
@@ -78,5 +89,32 @@ const updateVideo = asyncHandler(async (req, res) => {
 })
 
 const deleteVideo = asyncHandler(async (req, res) => {
+    const { _id: id, user } = req.body;
 
+    if (!id || !user) {
+        return res.status(400).json({ message: 'All fields required'})
+    }
+
+    const userFound = await User.findById(user).exec()
+
+    if (!userFound) {
+        return res.status(400).json({ message: 'Invalid User ID'})
+    }
+
+    const video = await Video.findById(id).exec()
+
+    if (!video || video.user.toString() !== user) {
+        return res.status(400).json({ message: 'Invalid video ID'})
+    }
+
+    const deletedVideo = await Video.findByIdAndDelete(id).lean().exec()
+
+    res.json({ message: `${deletedVideo.title} deleted`})
 })
+
+module.exports = {
+    getAllVideos,
+    createNewVideo,
+    updateVideo,
+    deleteVideo
+}
